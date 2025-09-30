@@ -1,0 +1,11 @@
+{
+    "model": "deepseek/deepseek-chat",
+    "success_count": 511,
+    "failure_count": 1,
+    "finish_stop": 55,
+    "finish_tool_calls": 456,
+    "finish_others": 0,
+    "finish_others_detail": {},
+    "schema_validation_error_count": 4,
+    "successful_tool_call_count": 452
+}
