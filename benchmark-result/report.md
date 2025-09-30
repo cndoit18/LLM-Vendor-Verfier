@@ -1,8 +1,15 @@
 # Benchmark Report
 
-**Generated at**: 2025-09-30 07:49:31
+**Generated at**: 2025-09-30 10:07:24
 
 This report is auto-generated from all summary JSON files.
+
+## Model: `deepseek/deepseek-chat`
+
+| Vendor | Success Count | Failure Count | Finish Stop | Finish Tool Calls | Finish Others | Schema Validation Errors | **Successful Tool Call Count** | **Similarity to Official** |
+|--------|---------------|---------------|-------------|-------------------|---------------|--------------------------|-------------------------------|---------------------------|
+| zenmux | 511 | 1 | 55 | 456 | 0 | 4 | **452** | **0.9955** |
+| deepseek-official | 511 | 1 | 58 | 453 | 0 | 4 | **449** | **1.0000** |
 
 ## Model: `deepseek/deepseek-v3.2-exp`
 
@@ -14,6 +21,6 @@ This report is auto-generated from all summary JSON files.
 
 ---
 
-**Total models**: 1
+**Total models**: 2
 
-**Total vendors**: 3
+**Total vendors**: 5
