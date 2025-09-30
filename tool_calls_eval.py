@@ -36,6 +36,9 @@ class ToolCallsValidator:
         max_retries: int = 3,
         extra_body: Optional[dict] = None,
         incremental: bool = False,
+        filter_unsupported_roles: bool = False,
+        vendor: Optional[str] = None,
+        provider_order: Optional[list[str]] = None,
     ):
         self.model = model
         self.base_url = base_url
@@ -48,6 +51,9 @@ class ToolCallsValidator:
         self.output_file = output_file
         self.summary_file = summary_file
         self.incremental = incremental
+        self.filter_unsupported_roles = filter_unsupported_roles
+        self.vendor = vendor
+        self.provider_order = provider_order
 
         self.results: list[dict] = []
 
@@ -60,16 +66,63 @@ class ToolCallsValidator:
 
         logger.info(f"Results will be saved to {self.output_file}")
         logger.info(f"Summary will be saved to {self.summary_file}")
+        if filter_unsupported_roles:
+            logger.info(
+                "Filter mode enabled: will remove tool/assistant history messages"
+            )
+        if vendor:
+            logger.info(f"Vendor specified: {vendor}")
+            if vendor == "openrouter" and provider_order:
+                logger.info(f"Provider order: {provider_order}")
 
     def prepare_request(self, request: dict) -> dict:
         """Process request messages and set model."""
         req = request.copy()
+
+        # Force disable stream mode
+        req["stream"] = False
+
+        # Add provider field for openrouter
+        if self.vendor == "openrouter" and self.provider_order:
+            req["provider"] = {"order": self.provider_order}
+
         if "messages" in req:
-            for message in req["messages"]:
-                if message.get("role") == "_input":
-                    message["role"] = "system"
+            if self.filter_unsupported_roles:
+                # Clean up unsupported roles
+                cleaned_messages = []
+                filtered_count = 0
+
+                # Remove user field (some APIs don't support it)
+                req.pop("user", None)
+
+                for message in req["messages"]:
+                    role = message.get("role")
+
+                    # Skip unsupported roles
+                    if role in ["tool", "_input"]:
+                        filtered_count += 1
+                        continue
+
+                    # Skip assistant messages with tool_calls (history)
+                    if role == "assistant" and message.get("tool_calls"):
+                        filtered_count += 1
+                        continue
+
+                    cleaned_messages.append(message)
+
+                if filtered_count > 0:
+                    logger.debug(f"Filtered {filtered_count} unsupported messages")
+
+                req["messages"] = cleaned_messages
+            else:
+                # Original behavior: only replace _input role
+                for message in req["messages"]:
+                    if message.get("role") == "_input":
+                        message["role"] = "system"
+
         if self.model:
             req["model"] = self.model
+
         return req
 
     def read_jsonl(self, file_path: str) -> list[dict]:
@@ -101,18 +154,42 @@ class ToolCallsValidator:
 
     async def send_request(self, request: dict) -> tuple[str, dict]:
         try:
-            if request.get("stream", False):
-                return await self._handle_stream_request(request)
+            logger.debug(
+                f"Sending request: {json.dumps(request, ensure_ascii=False)[:500]}..."
+            )
+
+            # Extract provider field from request and add to extra_body
+            request_copy = request.copy()
+            extra_body = self.extra_body.copy()
+            if "provider" in request_copy:
+                extra_body["provider"] = request_copy.pop("provider")
+
+            if request_copy.get("stream", False):
+                return await self._handle_stream_request(request_copy, extra_body)
             else:
-                response = await self.client.chat.completions.create(**request, extra_body=self.extra_body)
-                return "success", response.model_dump()
+                response = await self.client.chat.completions.create(
+                    **request_copy, extra_body=extra_body
+                )
+                response_dict = response.model_dump()
+                # 添加响应日志
+                logger.debug(
+                    f"Response received: {json.dumps(response_dict, ensure_ascii=False)[:500]}..."
+                )
+                return "success", response_dict
         except Exception as e:
             logger.error(f"Request failed: {e}")
+            logger.error(
+                f"Failed request payload: {json.dumps(request, ensure_ascii=False, indent=2)}"
+            )
             return "failed", {"error": str(e)}
 
-    async def _handle_stream_request(self, request: dict) -> tuple[str, dict]:
+    async def _handle_stream_request(
+        self, request: dict, extra_body: dict
+    ) -> tuple[str, dict]:
         try:
-            stream = await self.client.chat.completions.create(**request, extra_body=self.extra_body)
+            stream = await self.client.chat.completions.create(
+                **request, extra_body=extra_body
+            )
 
             request_id = None
             created = None
@@ -122,22 +199,22 @@ class ToolCallsValidator:
             usage = None
 
             async for event in stream:
-                if hasattr(event, 'id') and event.id:
+                if hasattr(event, "id") and event.id:
                     request_id = event.id
-                if hasattr(event, 'created') and event.created:
+                if hasattr(event, "created") and event.created:
                     created = event.created
 
-                if not hasattr(event, 'choices') or not event.choices:
+                if not hasattr(event, "choices") or not event.choices:
                     logger.warning("Empty choices in stream event")
                     continue
 
                 choice = event.choices[0]
 
-                if hasattr(choice, 'delta') and choice.delta:
-                    if hasattr(choice.delta, 'content') and choice.delta.content:
+                if hasattr(choice, "delta") and choice.delta:
+                    if hasattr(choice.delta, "content") and choice.delta.content:
                         full_content.append(choice.delta.content)
 
-                    if hasattr(choice.delta, 'tool_calls') and choice.delta.tool_calls:
+                    if hasattr(choice.delta, "tool_calls") and choice.delta.tool_calls:
                         for tc in choice.delta.tool_calls:
                             idx = tc.index if tc.index is not None else 0
 
@@ -148,16 +225,23 @@ class ToolCallsValidator:
                                     "function": {"name": "", "arguments": ""},
                                 }
 
-                            if hasattr(tc, 'function') and tc.function:
-                                if hasattr(tc.function, 'name') and tc.function.name:
-                                    tool_calls[idx]["function"]["name"] = tc.function.name
-                                if hasattr(tc.function, 'arguments') and tc.function.arguments:
-                                    tool_calls[idx]["function"]["arguments"] += tc.function.arguments
+                            if hasattr(tc, "function") and tc.function:
+                                if hasattr(tc.function, "name") and tc.function.name:
+                                    tool_calls[idx]["function"][
+                                        "name"
+                                    ] = tc.function.name
+                                if (
+                                    hasattr(tc.function, "arguments")
+                                    and tc.function.arguments
+                                ):
+                                    tool_calls[idx]["function"][
+                                        "arguments"
+                                    ] += tc.function.arguments
 
-                if hasattr(choice, 'finish_reason') and choice.finish_reason:
+                if hasattr(choice, "finish_reason") and choice.finish_reason:
                     finish_reason = choice.finish_reason
 
-                if hasattr(choice, 'usage') and choice.usage:
+                if hasattr(choice, "usage") and choice.usage:
                     usage = choice.usage
 
             response = {
@@ -356,6 +440,15 @@ async def main():
         help="Evaluation model name, e.g., kimi-k2-0905-preview",
     )
     parser.add_argument(
+        "--filter-unsupported-roles",
+        action="store_true",
+        help=(
+            "Filter out unsupported message roles (tool, _input) and assistant messages with tool_calls.\n"
+            "Use this flag when testing APIs that don't support full tool call conversation history.\n"
+            "This allows testing first-round tool call generation capability only."
+        ),
+    )
+    parser.add_argument(
         "--base-url",
         required=True,
         help="API endpoint, e.g., https://api.moonshot.cn/v1",
@@ -394,9 +487,7 @@ async def main():
     parser.add_argument(
         "--extra-body",
         type=str,
-        help=(
-            "Extra JSON body as string.\n"
-        ),
+        help=("Extra JSON body as string.\n"),
     )
     parser.add_argument(
         "--incremental",
@@ -404,6 +495,23 @@ async def main():
         help=(
             "Incremental mode: only rerun previously failed or new requests, merge results into existing output file.\n"
             "Existing successful results are preserved, summary will be recalculated."
+        ),
+    )
+    parser.add_argument(
+        "--vendor",
+        type=str,
+        help=(
+            "Specify the vendor name (e.g., 'openrouter').\n"
+            "When vendor is set to 'openrouter', the 'provider' field will be added to the request."
+        ),
+    )
+    parser.add_argument(
+        "--provider-order",
+        type=str,
+        help=(
+            "Comma-separated list of provider names for OpenRouter's provider.order field.\n"
+            "Example: 'openai,together'\n"
+            "Only used when --vendor is set to 'openrouter'."
         ),
     )
 
@@ -417,6 +525,11 @@ async def main():
             logger.error(f"Invalid JSON for --extra-body: {e}")
             return
 
+    # Parse provider order
+    provider_order = None
+    if args.provider_order:
+        provider_order = [p.strip() for p in args.provider_order.split(",")]
+
     validator = ToolCallsValidator(
         model=args.model,
         base_url=args.base_url,
@@ -428,6 +541,9 @@ async def main():
         max_retries=args.retries,
         extra_body=extra_body,
         incremental=args.incremental,
+        filter_unsupported_roles=args.filter_unsupported_roles,
+        vendor=args.vendor,
+        provider_order=provider_order,
     )
     await validator.validate_file(args.file_path)
 

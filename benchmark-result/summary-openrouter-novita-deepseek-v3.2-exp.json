@@ -1,0 +1,11 @@
+{
+    "model": "deepseek/deepseek-v3.2-exp",
+    "success_count": 512,
+    "failure_count": 0,
+    "finish_stop": 77,
+    "finish_tool_calls": 435,
+    "finish_others": 0,
+    "finish_others_detail": {},
+    "schema_validation_error_count": 1,
+    "successful_tool_call_count": 434
+}

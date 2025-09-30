@@ -1,0 +1,1 @@
+{"model":"deepseek/deepseek-v3.2-exp","messages":[{"role":"user","content":"Search for Python tutorials"}],"max_tokens":1000,"temperature":0.6,"stream":false,"tools":[{"type":"function","function":{"name":"search","description":"Search the web","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}}}]}
