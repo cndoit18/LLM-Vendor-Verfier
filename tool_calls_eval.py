@@ -39,6 +39,7 @@ class ToolCallsValidator:
         filter_unsupported_roles: bool = False,
         vendor: Optional[str] = None,
         provider_order: Optional[list[str]] = None,
+        alias_model: Optional[str] = None,
     ):
         self.model = model
         self.base_url = base_url
@@ -54,6 +55,7 @@ class ToolCallsValidator:
         self.filter_unsupported_roles = filter_unsupported_roles
         self.vendor = vendor
         self.provider_order = provider_order
+        self.alias_model = alias_model if alias_model else model
 
         self.results: list[dict] = []
 
@@ -227,16 +229,16 @@ class ToolCallsValidator:
 
                             if hasattr(tc, "function") and tc.function:
                                 if hasattr(tc.function, "name") and tc.function.name:
-                                    tool_calls[idx]["function"][
-                                        "name"
-                                    ] = tc.function.name
+                                    tool_calls[idx]["function"]["name"] = (
+                                        tc.function.name
+                                    )
                                 if (
                                     hasattr(tc.function, "arguments")
                                     and tc.function.arguments
                                 ):
-                                    tool_calls[idx]["function"][
-                                        "arguments"
-                                    ] += tc.function.arguments
+                                    tool_calls[idx]["function"]["arguments"] += (
+                                        tc.function.arguments
+                                    )
 
                 if hasattr(choice, "finish_reason") and choice.finish_reason:
                     finish_reason = choice.finish_reason
@@ -382,7 +384,7 @@ class ToolCallsValidator:
     def compute_summary(self):
         """Compute summary from all results."""
         summary = {
-            "model": self.model,
+            "model": self.alias_model,
             "success_count": 0,
             "failure_count": 0,
             "finish_stop": 0,
@@ -514,6 +516,11 @@ async def main():
             "Only used when --vendor is set to 'openrouter'."
         ),
     )
+    parser.add_argument(
+        "--alias-model",
+        type=str,
+        help=("Alias model name to use in results (defaults to actual model name)"),
+    )
 
     args = parser.parse_args()
 
@@ -543,6 +550,7 @@ async def main():
         incremental=args.incremental,
         filter_unsupported_roles=args.filter_unsupported_roles,
         vendor=args.vendor,
+        alias_model=args.alias_model,
         provider_order=provider_order,
     )
     await validator.validate_file(args.file_path)
