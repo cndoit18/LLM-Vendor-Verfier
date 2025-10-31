@@ -46,7 +46,8 @@ python tool_calls_eval.py ./datasets/tool-call-single-content-dataset.jsonl \
     --api-key YOUR_API_KEY \
     --concurrency 5 \
     --output ./benchmark-result/results-{vendor-name}-{model-name}.jsonl \
-    --summary ./benchmark-result/summary-{vendor-name}-{model-name}.json
+    --summary ./benchmark-result/summary-{vendor-name}-{model-name}.json \
+    --model-alias kimi-k2-0905-preview
 ```
 
 - `./datasets/tool-call-single-content-dataset.jsonl`: JSONL 格式的测试集文件路径
@@ -63,6 +64,7 @@ python tool_calls_eval.py ./datasets/tool-call-single-content-dataset.jsonl \
 - `--filter-unsupported-roles`: 过滤不支持的消息角色（tool、_input）和带有 tool_calls 的 assistant 消息。在测试不支持完整工具调用对话历史的 API 时使用此选项
 - `--vendor`: 指定供应商名称（例如 'openrouter'）。在使用供应商特定功能时必需
 - `--provider-order`: 用于 OpenRouter 的 provider 路由的逗号分隔的 provider 名称列表（例如 'openai,together'）。仅在 --vendor 设置为 'openrouter' 时使用
+- `--model-alias`: 由于不同供应商的模型名称可能不一致，需要指定模型别名来统一不同供应商的模型
 
 
 ### 通过 OpenRouter 测试
