@@ -287,7 +287,7 @@ class ToolCallsValidator:
                 if finish_reason == "tool_calls":
                     tools = prepared_req["prepared"].get("tools", [])
                     tool_calls = choice.get("message", {}).get("tool_calls", [])
-                    tool_calls_valid = all(
+                    tool_calls_valid = len(tool_calls) != 0 and all(
                         self.validate_tool_call(tc, tools) for tc in tool_calls
                     )
 
